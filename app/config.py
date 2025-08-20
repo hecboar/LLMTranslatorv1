@@ -45,6 +45,26 @@ class Settings(BaseSettings):
     rag_topk: int = Field(default=3, alias="MT_RAG_TOPK")
     tm_topk: int  = Field(default=1, alias="MT_TM_TOPK")
 
+
+        # --- NUEVO: control de extractor/validadores LLM y trazas ---
+    llm_term_extractor_enabled: bool = Field(default=True, alias="MT_LLM_TERM_EXTRACTOR")
+    term_cand_topk: int = Field(default=12, alias="MT_TERM_CAND_TOPK")
+    term_min_len: int = Field(default=2, alias="MT_TERM_MIN_LEN")
+
+    llm_validators_enabled: bool = Field(default=True, alias="MT_LLM_VALIDATORS")
+    llm_domain_weight: float = Field(default=0.7, alias="MT_LLM_DOMAIN_WEIGHT")  # mezcla LLM/reglas para domain_score
+
+    # Búsqueda web
+    ddg_max_results: int = Field(default=4, alias="MT_DDG_MAX_RESULTS")
+    rag_trusted_domains: str = Field(
+        default="eur-lex.europa.eu,oecd.org,esma.europa.eu,ilpa.org,investeurope.eu,inrev.org,epra.com,rics.org",
+        alias="MT_RAG_TRUSTED_DOMAINS"
+    )
+
+    # Trazas (dev)
+    trace_prompts: bool = Field(default=True, alias="MT_TRACE_PROMPTS")  # si quieres ver prompts en logs/response(debug)
+
+
     #  configuración pydantic v2
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,8 +1,13 @@
+# app/server.py
 from __future__ import annotations
-from fastapi import FastAPI, HTTPException
 import logging
-from pydantic import BaseModel, Field, AliasChoices
 from typing import List, Dict, Optional, Literal
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, AliasChoices
+
 from .logging_conf import setup_logging
 from .pipelines.translate_pipeline import run_pipeline
 from .pipelines.translate_graph import run_pipeline_graph
@@ -10,19 +15,34 @@ from .stores.term_store import TermStore, GlossaryItem, DNTItem
 from .stores.rag_store import RAGStore
 from .stores.tm_store import TMStore
 
+# -----------------------------------------------------------------------------
+# App & logging
+# -----------------------------------------------------------------------------
 setup_logging("INFO")
-app = FastAPI(title="MultiAgent MT API", version="1.1.0")
-logger = logging.getLogger(__name__)
+app = FastAPI(title="MultiAgent MT API", version="1.2.0")
+logger = logging.getLogger("app.server")
 
+# CORS (para UI local / Swagger)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # en prod, restringir orígenes
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# -----------------------------------------------------------------------------
+# Models
+# -----------------------------------------------------------------------------
 class TranslateRequest(BaseModel):
     text: str
     targets: Optional[List[str]] = Field(default=None, description="ej: ['en','fr','de']")
     client_id: str = Field(default="__global__", description="identificador cliente")
-    src_lang: Optional[Literal["en","es","fr","de"]] = None
+    src_lang: Optional[Literal["en", "es", "fr", "de"]] = None
     domain: Optional[str] = Field(default=None, validation_alias=AliasChoices("domain", "domain_hint"))
     enable_rag: bool = True
     save_tm: bool = True
-    engine: Literal["async","graph"] = "graph"
+    engine: Literal["async", "graph"] = "graph"
 
 class TranslateResponse(BaseModel):
     src_lang: str
@@ -49,9 +69,33 @@ class RAGIngestRequest(BaseModel):
 class TMClearRequest(BaseModel):
     client_id: str
 
+# -----------------------------------------------------------------------------
+# Basic endpoints
+# -----------------------------------------------------------------------------
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/docs")
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@app.get("/version")
+async def version():
+    return {"app": app.title, "version": app.version}
+
+# -----------------------------------------------------------------------------
+# Translate
+# -----------------------------------------------------------------------------
 @app.post("/v1/translate", response_model=TranslateResponse)
 async def translate(req: TranslateRequest):
+    # Log sin exponer texto ni PII
     try:
+        logger.info(
+            "translate request: client_id=%s engine=%s targets=%s src_lang=%s domain=%s enable_rag=%s save_tm=%s text_len=%d",
+            req.client_id, req.engine, req.targets, req.src_lang, req.domain,
+            req.enable_rag, req.save_tm, len(req.text or ""),
+        )
         if req.engine == "graph":
             res = await run_pipeline_graph(
                 text=req.text,
@@ -73,21 +117,27 @@ async def translate(req: TranslateRequest):
                 save_tm=req.save_tm,
             )
         return TranslateResponse(**res)
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log full stack trace to help diagnose 500s
         logger.exception("/v1/translate failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
+# -----------------------------------------------------------------------------
+# Glossary management
+# -----------------------------------------------------------------------------
 @app.post("/v1/glossary/upsert")
 async def glossary_upsert(item: GlossaryUpsert):
     try:
         ts = TermStore()
-        await ts.upsert_preferred(GlossaryItem(
-            client_id=item.client_id,
-            concept_key=item.concept_key,
-            lang=item.lang,
-            preferred=item.preferred
-        ))
+        await ts.upsert_preferred(
+            GlossaryItem(
+                client_id=item.client_id,
+                concept_key=item.concept_key,
+                lang=item.lang,
+                preferred=item.preferred,
+            )
+        )
         if item.variants:
             await ts.add_variants_global(item.concept_key, item.lang, item.variants)
         return {"status": "ok"}
@@ -105,6 +155,9 @@ async def glossary_export(client_id: str):
         logger.exception("/v1/glossary/%s/export failed: %s", client_id, e)
         raise HTTPException(status_code=500, detail=str(e))
 
+# -----------------------------------------------------------------------------
+# DNT
+# -----------------------------------------------------------------------------
 @app.post("/v1/dnt/upsert")
 async def dnt_upsert(req: DNTUpsert):
     try:
@@ -116,6 +169,9 @@ async def dnt_upsert(req: DNTUpsert):
         logger.exception("/v1/dnt/upsert failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
+# -----------------------------------------------------------------------------
+# RAG
+# -----------------------------------------------------------------------------
 @app.post("/v1/rag/ingest")
 async def rag_ingest(req: RAGIngestRequest):
     try:
@@ -126,12 +182,15 @@ async def rag_ingest(req: RAGIngestRequest):
         logger.exception("/v1/rag/ingest failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
+# -----------------------------------------------------------------------------
+# TM
+# -----------------------------------------------------------------------------
 @app.post("/v1/tm/clear")
 async def tm_clear(req: TMClearRequest):
     try:
         tm = TMStore()
         await tm.clear_client(req.client_id)
-        return {"status":"ok"}
+        return {"status": "ok"}
     except Exception as e:
         logger.exception("/v1/tm/clear failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))

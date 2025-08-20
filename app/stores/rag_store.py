@@ -1,9 +1,9 @@
 from __future__ import annotations
 import sqlite3, asyncio, os
-from typing import List, Optional
+from typing import List, Optional, Iterable
 import yaml
 import trafilatura
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 import numpy as np
 from ..config import settings
 from ..services.embeddings import embed_texts, cosine_sim
@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS rag_docs(
 CREATE INDEX IF NOT EXISTS idx_rag_domain ON rag_docs(domain);
 """
 
+def _trusted(url: str) -> bool:
+    allow = {d.strip().lower() for d in settings.rag_trusted_domains.split(",") if d.strip()}
+    return any(host and host in url.lower() for host in allow)
+
 class RAGStore:
     def __init__(self, path: str | None = None):
         self.path = path or settings.db_path
@@ -50,13 +54,12 @@ class RAGStore:
         await asyncio.to_thread(_t)
         return sum(len(v) for v in data.values())
 
-    async def ingest_urls(self, urls: List[str], domain: str, client_id: Optional[str] = None) -> int:
-        texts = []
-        metas = []
+    async def ingest_urls(self, urls: Iterable[str], domain: str, client_id: Optional[str] = None) -> int:
+        texts, metas = [], []
         for u in urls:
             try:
                 html = trafilatura.fetch_url(u, timeout=20, no_ssl=True)
-                if not html:
+                if not html: 
                     continue
                 text = trafilatura.extract(html, include_tables=False, include_comments=False)
                 if not text:
@@ -72,7 +75,7 @@ class RAGStore:
             with sqlite3.connect(self.path) as c:
                 for (u, title), vec, content in zip(metas, vecs, texts):
                     c.execute(
-                        "INSERT INTO rag_docs(domain,client_id,url,title,content,vec) VALUES(?,?,?,?,?,?)",
+                        "INSERT OR IGNORE INTO rag_docs(domain,client_id,url,title,content,vec) VALUES(?,?,?,?,?,?)",
                         (domain, client_id, u, title, content, vec.tobytes())
                     )
         await asyncio.to_thread(_t)
@@ -98,15 +101,15 @@ class RAGStore:
                 return [contents[i][:1800] for i in order]
         return await asyncio.to_thread(_t)
 
-    async def web_backfill_if_empty(self, query_terms: List[str], domain: str, client_id: Optional[str]) -> int:
-        urls = []
+    async def web_backfill(self, query_terms: List[str], domain: str, client_id: Optional[str]) -> int:
+        urls: List[str] = []
         try:
             with DDGS() as ddgs:
-                for t in query_terms[:6]:
-                    res = ddgs.text(f"{t} {domain} finance definition", max_results=3)
-                    for r in res:
+                for t in query_terms[:10]:
+                    q = f"{t} {domain} finance definition"
+                    for r in ddgs.text(q, max_results=settings.ddg_max_results):
                         href = r.get("href")
-                        if href:
+                        if href and (_trusted(href) or len(urls) < 3):
                             urls.append(href)
         except Exception:
             return 0
