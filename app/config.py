@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     rag_topk: int = Field(default=3, alias="MT_RAG_TOPK")
     tm_topk: int  = Field(default=1, alias="MT_TM_TOPK")
 
-
+    term_quality_min: float = Field(default=0.75, alias="MT_TERM_QUALITY_MIN")
         # --- NUEVO: control de extractor/validadores LLM y trazas ---
     llm_term_extractor_enabled: bool = Field(default=True, alias="MT_LLM_TERM_EXTRACTOR")
     term_cand_topk: int = Field(default=12, alias="MT_TERM_CAND_TOPK")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import sqlite3, json, asyncio
 from dataclasses import dataclass
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from ..config import settings
 
 @dataclass
@@ -21,22 +21,22 @@ INIT_SQL = """
 PRAGMA journal_mode=WAL;
 
 CREATE TABLE IF NOT EXISTS glossary(
-  client_id TEXT,           -- NULL = global
-  domain    TEXT,           -- NULL = cross-domain
+  client_id   TEXT,           -- NULL = global
+  domain      TEXT,           -- NULL = cross-domain
   concept_key TEXT NOT NULL,
-  lang TEXT NOT NULL,
-  preferred TEXT NOT NULL,
+  lang        TEXT NOT NULL,
+  preferred   TEXT NOT NULL,
   variants_json TEXT DEFAULT '[]',
   PRIMARY KEY (client_id, domain, concept_key, lang)
 );
 
 CREATE TABLE IF NOT EXISTS dnt_client(
   client_id TEXT NOT NULL,
-  term TEXT NOT NULL,
+  term      TEXT NOT NULL,
   PRIMARY KEY (client_id, term)
 );
 
--- índices auxiliares (para búsquedas rápidas y unicidad case-insensitive si lo necesitas)
+-- helper indexes
 CREATE INDEX IF NOT EXISTS idx_glossary_concept_lang
 ON glossary(concept_key, lang);
 
@@ -52,13 +52,18 @@ class TermStore:
 
     # -------- CRUD --------
     async def upsert_preferred(self, item: GlossaryItem):
+        """
+        Upsert preferred form; preserves existing variants_json.
+        """
         def _t():
             with sqlite3.connect(self.path) as c:
                 c.execute(
-                    """INSERT OR REPLACE INTO glossary(client_id,domain,concept_key,lang,preferred,variants_json)
-                       VALUES(?,?,?,?,?,COALESCE((SELECT variants_json FROM glossary 
-                               WHERE client_id IS ? AND domain IS ? 
-                                 AND concept_key=? AND lang=?),'[]'))""",
+                    """INSERT OR REPLACE INTO glossary
+                       (client_id,domain,concept_key,lang,preferred,variants_json)
+                       VALUES(?,?,?,?,?,
+                              COALESCE((SELECT variants_json FROM glossary
+                                        WHERE client_id IS ? AND domain IS ?
+                                          AND concept_key=? AND lang=?),'[]'))""",
                     (item.client_id, item.domain, item.concept_key, item.lang, item.preferred,
                      item.client_id, item.domain, item.concept_key, item.lang)
                 )
@@ -66,6 +71,9 @@ class TermStore:
 
     async def add_variants(self, concept_key: str, lang: str, variants: List[str],
                            client_id: str | None = None, domain: str | None = None):
+        """
+        Merge variants for a concept/lang at a given scope.
+        """
         def _t():
             with sqlite3.connect(self.path) as c:
                 row = c.execute(
@@ -75,13 +83,17 @@ class TermStore:
                 ).fetchone()
                 vs = set()
                 if row:
-                    vs.update(json.loads(row[0] or "[]"))
+                    try:
+                        vs.update(json.loads(row[0] or "[]"))
+                    except Exception:
+                        pass
                 vs.update([v for v in variants if v])
                 c.execute(
                     "INSERT OR REPLACE INTO glossary(client_id,domain,concept_key,lang,preferred,variants_json) "
                     "VALUES(?,?,?,?,COALESCE((SELECT preferred FROM glossary WHERE client_id IS ? "
                     "AND domain IS ? AND concept_key=? AND lang=?),''),?)",
-                    (client_id, domain, concept_key, lang, client_id, domain, concept_key, lang,
+                    (client_id, domain, concept_key, lang,
+                     client_id, domain, concept_key, lang,
                      json.dumps(sorted(vs), ensure_ascii=False))
                 )
         await asyncio.to_thread(_t)
@@ -93,6 +105,9 @@ class TermStore:
         await asyncio.to_thread(_t)
 
     async def export_client(self, client_id: str) -> Dict[str, Dict[str, str]]:
+        """
+        Returns a dict: {"<DOMAIN or GLOBAL>::<concept_key>": {"en": "...", "fr": "...", ...}, ...}
+        """
         def _t():
             with sqlite3.connect(self.path) as c:
                 rows = c.execute(
@@ -113,14 +128,70 @@ class TermStore:
                 return [r[0] for r in rows]
         return await asyncio.to_thread(_t)
 
-    # -------- Lectura compuesta (prioridades) --------
+    # -------- Helpers used by tests/seed --------
+    async def set_global_preferred(self, concept_key: str, lang: str, preferred: str):
+        """
+        Convenience used in tests/seed fixtures.
+        """
+        await self.upsert_preferred(GlossaryItem(
+            client_id=None, domain=None, concept_key=concept_key, lang=lang, preferred=preferred
+        ))
+
+    # -------- Fuzzy lookup & blocks --------
+    async def find_preferred_fuzzy(self, client_id: str | None, domain: str | None,
+                                   lang: str, query_key: str) -> Optional[str]:
+        """
+        Priority search for a preferred term by concept_key or variants (case-insensitive):
+          1) client+domain
+          2) client (cross-domain)
+          3) global+domain
+          4) global cross-domain
+        Returns preferred or None.
+        """
+        qkey = (query_key or "").strip()
+        if not qkey:
+            return None
+        qkey_l = qkey.lower()
+
+        def _like_payload(x: str) -> str:
+            # crude but effective: look for `"term"` in the JSON string
+            return f'%"{x}"%'
+
+        def _t() -> Optional[str]:
+            with sqlite3.connect(self.path) as c:
+                c.row_factory = sqlite3.Row
+                def one(cid, dom) -> Optional[str]:
+                    r = c.execute(
+                        """
+                        SELECT preferred
+                        FROM glossary
+                        WHERE client_id IS ? AND domain IS ? AND lang=?
+                          AND (
+                                LOWER(concept_key) = ?
+                             OR LOWER(variants_json) LIKE ?
+                          )
+                        LIMIT 1
+                        """,
+                        (cid, dom, lang, qkey_l, _like_payload(qkey_l))
+                    ).fetchone()
+                    return (r["preferred"] if r else None)
+
+                for cid, dom in [(client_id, domain), (client_id, None), (None, domain), (None, None)]:
+                    pref = one(cid, dom)
+                    if pref:
+                        return pref
+                return None
+
+        return await asyncio.to_thread(_t)
+
     async def glossary_block(self, client_id: str, domain: str | None, lang: str) -> Tuple[str, Dict[str, str]]:
         """
-        Prioridad de lookup:
-        1) cliente+dominio
-        2) cliente (cross-domain)
-        3) global+dominio
+        Priority of lookup:
+        1) client+domain
+        2) client (cross-domain)
+        3) global+domain
         4) global (cross-domain)
+        Returns the Jinja-ready block and a map {concept_key: preferred}.
         """
         def _t():
             with sqlite3.connect(self.path) as c:
@@ -131,11 +202,11 @@ class TermStore:
                         (cid, dom, lang)
                     ).fetchall()
 
-                m: Dict[str,str] = {}
+                m: Dict[str, str] = {}
                 for cid, dom in [(client_id, domain), (client_id, None), (None, domain), (None, None)]:
                     rows = fetch(cid, dom)
                     for ck, pref in rows:
-                        m[ck] = pref  # override por prioridad
+                        m[ck] = pref  # override by priority
                 lines = [f"- {k}: {v}" for k, v in sorted(m.items())]
                 return "\n".join(lines), m
         return await asyncio.to_thread(_t)
