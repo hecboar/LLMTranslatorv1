@@ -1,0 +1,23 @@
+client_id: qa_client
+targets: [en, fr, de]
+domain: Private Equity
+glossary:
+  IRR:
+    en: IRR
+    fr: TRI
+    de: IRR
+  TVPI:
+    en: TVPI
+    fr: TVPI
+    de: TVPI
+  committed capital:
+    en: committed capital
+    fr: capital engagé
+    de: zugesagtes Kapital
+dnt:
+  - IRR
+  - TVPI
+cases:
+  - src_lang: es
+    text: |
+      La TIR (IRR) esperada del fondo es del 12,5% y el TVPI es 1,8x sobre capital comprometido.

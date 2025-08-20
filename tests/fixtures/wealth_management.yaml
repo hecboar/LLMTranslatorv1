@@ -1,0 +1,19 @@
+client_id: qa_client
+targets: [en, fr, de]
+domain: Wealth Management
+glossary:
+  UCITS:
+    en: UCITS
+    fr: OPCVM
+    de: OGAW
+  PRIIPs:
+    en: PRIIPs
+    fr: PRIIPs
+    de: PRIIPs
+dnt:
+  - UCITS
+  - PRIIPs
+cases:
+  - src_lang: es
+    text: |
+      El KID conforme a PRIIPs debe incluir el TER; el fondo es un UCITS.

@@ -1,0 +1,107 @@
+Private Equity:
+  - title: ILPA Fee Reporting Template (Dec 2016)
+    organization: ILPA
+    url: https://ilpa.org/wp-content/uploads/2024/11/ILPA-Fee-Reporting-Template-December-2016.pdf
+    doc_type: pdf
+    languages: [en]
+    year: 2016
+    notes: Standardized fee reporting for private equity funds.
+
+  - title: ILPA Fee Reporting Template – FAQ
+    organization: ILPA
+    url: https://ilpa.org/wp-content/uploads/2024/02/ILPA-Fee-Reporting-Template-FAQ-2023.pdf
+    doc_type: pdf
+    languages: [en]
+    year: 2023
+    notes: Clarifications on the ILPA fee reporting template.
+
+  - title: Invest Europe – Professional Standards Handbook
+    organization: Invest Europe
+    url: https://www.investeurope.eu/media/2123/ie_handbook_professional_std_oct_2015.pdf
+    doc_type: pdf
+    languages: [en]
+    year: 2015
+    notes: Professional standards for the European private equity industry.
+
+Real Estate:
+  - title: RICS Valuation – Global Standards (Red Book) 2022
+    organization: RICS
+    url: https://www.rics.org/uk/upholding-professional-standards/standards/rics-standards-and-guidance/valuation/red-book-2022/
+    doc_type: html
+    languages: [en]
+    year: 2022
+    notes: Global valuation standards used across real estate markets.
+
+  - title: "EPRA Best Practices Recommendations: BPR Guidelines 2022"
+    organization: EPRA
+    url: https://www.epra.com/application/files/6616/9971/1400/EPRA_BPR_Guidelines2022.pdf
+    doc_type: pdf
+    languages: [en]
+    year: 2022
+    notes: Listed real estate reporting standards (Europe).
+
+  - title: INREV – NAV Tutorial (Guidelines Module)
+    organization: INREV
+    url: https://www.inrev.org/library/nav-tutorial
+    doc_type: html
+    languages: [en]
+    year: 2014
+    notes: Background and adjustments for INREV NAV methodology.
+
+Fiscal/Tax:
+  - title: OECD – Model Tax Convention (Overview)
+    organization: OECD
+    url: https://www.oecd.org/tax/treaties/model-tax-convention-on-income-and-on-capital.htm
+    doc_type: html
+    languages: [en, fr]
+    year: 2017
+    notes: Model treaty framework used in double tax treaties.
+
+  - title: OECD – Transfer Pricing Guidelines (Overview)
+    organization: OECD
+    url: https://www.oecd.org/tax/transfer-pricing/oecd-transfer-pricing-guidelines.htm
+    doc_type: html
+    languages: [en, fr]
+    year: 2022
+    notes: Arm’s length principle guidance for MNEs and tax administrations.
+
+  - title: EU VAT Directive 2006/112/EC (EUR-Lex)
+    organization: EU (EUR-Lex)
+    url: https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32006L0112
+    doc_type: pdf
+    languages: [en, fr, de, es]
+    year: 2006
+    notes: Common system of value added tax in the EU.
+
+Wealth Management:
+  - title: UCITS Directive 2009/65/EC (EUR-Lex)
+    organization: EU (EUR-Lex)
+    url: https://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2009:302:0032:0096:en:PDF
+    doc_type: pdf
+    languages: [en, fr, de, es]
+    year: 2009
+    notes: Rules for UCITS funds.
+
+  - title: MiFID II Directive 2014/65/EU (EUR-Lex)
+    organization: EU (EUR-Lex)
+    url: https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32014L0065
+    doc_type: pdf
+    languages: [en, fr, de, es]
+    year: 2014
+    notes: Markets in financial instruments directive.
+
+  - title: PRIIPs Regulation (EU) No 1286/2014 (EUR-Lex)
+    organization: EU (EUR-Lex)
+    url: https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32014R1286
+    doc_type: pdf
+    languages: [en, fr, de, es]
+    year: 2014
+    notes: Key Information Documents for PRIIPs.
+
+  - title: "ESMA Q&A: UCITS"
+    organization: ESMA (mirrored)
+    url: https://www.mfsa.mt/wp-content/uploads/2020/05/esma_ucits_qa_1.pdf
+    doc_type: pdf
+    languages: [en]
+    year: 2020
+    notes: Supervisory Q&A on UCITS topics.

@@ -1,0 +1,14 @@
+Role: Editor for {{ tgt_lang }} translation (domain "{{ domain }}").
+Task: Merge adequacy and fluency suggestions into a final, coherent translation.
+
+Inputs:
+- Adequacy revised: {{ adequacy_text }}
+- Fluency revised: {{ fluency_text }}
+
+Constraints:
+- If there is a conflict, prefer adequacy (fidelity) over fluency.
+- Ensure terminology and numeric consistency are preserved.
+- Keep paragraphing.
+
+Output:
+Return only the final translation text.

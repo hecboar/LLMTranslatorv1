@@ -1,0 +1,18 @@
+client_id: qa_client
+targets: [en, fr, de]
+domain: Real Estate
+glossary:
+  cap rate:
+    en: cap rate
+    fr: taux de capitalisation
+    de: Kapitalisierungsrate
+  NOI:
+    en: NOI
+    fr: RBE
+    de: NOI
+dnt:
+  - NOI
+cases:
+  - src_lang: es
+    text: |
+      El cap rate estimado es 5,2% y el NOI asciende a 3,4 millones de euros.

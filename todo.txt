@@ -1,0 +1,190 @@
+revisar los terminos para que sean mas finos: 
+
+probar con este:
+Despite global macroeconomic volatility, the fund posted an annualized IRR of 15.6%, largely attributable to unrealized gains on late-stage venture positions. NAV was adjusted downward by 3.2% due to FX movements. Distributions amounted to €4.2M while capital calls reached €1.8M
+
+
+
+
+sí: tiene mucho más sentido usar un enfoque híbrido → regex rápidas + LLM extractor.
+El LLM es muy bueno cazando jargon contextual (p. ej. “late-stage venture”, “dry powder”, “distribution waterfall”), y después usamos DuckDuckGo (vía ddgs) sólo para los términos que no existan en glosarios/TM/RAG. Te dejo el código listo:
+
+1) Config (añade flags)
+
+app/config.py – añade estos campos (o pega este bloque si te resulta más fácil):
+
+# ... resto igual ...
+class Settings(BaseSettings):
+    # ...
+    llm_validators_enabled: bool = Field(default=True, alias="MT_LLM_VALIDATORS")
+    llm_domain_weight: float = Field(default=0.7, alias="MT_LLM_DOMAIN_WEIGHT")
+
+    # NUEVO: extractor LLM de términos
+    llm_term_extractor_enabled: bool = Field(default=True, alias="MT_LLM_TERM_EXTRACTOR")
+    term_cand_topk: int = Field(default=12, alias="MT_TERM_CAND_TOPK")
+    term_min_len: int = Field(default=2, alias="MT_TERM_MIN_LEN")
+    # ...
+
+
+En .env puedes controlar:
+
+MT_LLM_TERM_EXTRACTOR=true
+MT_TERM_CAND_TOPK=12
+
+2) LLM extractor de términos
+
+Crea: app/agents/term_extractor.py
+
+from __future__ import annotations
+from typing import List
+from pydantic import BaseModel, Field
+from ..services.llm import llm_parse
+from ..config import settings
+
+class TermsOut(BaseModel):
+    terms: List[str] = Field(default_factory=list)
+
+_PROMPT = """You are a financial terminology spotter.
+Goal: Extract 5-20 domain-relevant KEY TERMS from the SOURCE. Prefer acronyms, ratios, regulatory names, metrics, and industry idioms. 
+Do NOT include generic words (e.g., "market", "investment", "company", "value") unless part of a fixed expression. Preserve original casing.
+Return JSON: {"terms": ["..."]}
+
+Expected domain: {domain}
+SOURCE:
+{src}
+"""
+
+async def extract_terms_llm(text: str, domain: str | None = None) -> List[str]:
+    dom = domain or "Finance"
+    prompt = _PROMPT.format(domain=dom, src=text[:6000])
+    out = await llm_parse(prompt, model=settings.model_review, schema=TermsOut, temperature=0.0)
+    # post-filtro básico
+    cleaned: List[str] = []
+    for t in out.terms:
+        t = (t or "").strip()
+        if not t:
+            continue
+        if len(t) < settings.term_min_len:
+            continue
+        cleaned.append(t)
+    # dedupe preservando orden
+    seen, final = set(), []
+    for t in cleaned:
+        k = t.lower()
+        if k not in seen:
+            seen.add(k)
+            final.append(t)
+    return final[: settings.term_cand_topk]
+
+3) Term mapper híbrido (regex + LLM)
+
+Sustituye tu app/agents/term_mapper.py por esto:
+
+from __future__ import annotations
+import re
+from typing import List, Set
+from ..stores.rag_store import RAGStore
+from ..config import settings
+from .term_extractor import extract_terms_llm
+
+# Regex: acrónimos (2-6) y ProperCase ≥4
+CAND_RE = re.compile(r"\b([A-Z]{2,6}|[A-Z][a-zA-Z]{3,})\b")
+
+STOP = {
+    "and","or","the","for","with","from","into","over","under","between","without",
+    "del","de","la","el","los","las","des","le","les","von","und","der","die","das"
+}
+
+# pequeño boost de jerga PE/WM/etc.
+BOOST = {"IRR","NAV","TVPI","DPI","MOIC","FX","AIFMD","ELTIF","UCITS","MiFID","PRIIPs","KID"}
+
+def _regex_candidates(text: str) -> List[str]:
+    cands: Set[str] = set()
+    for m in CAND_RE.finditer(text or ""):
+        tok = (m.group(1) or "").strip()
+        if tok and tok.lower() not in STOP:
+            cands.add(tok)
+    return sorted(cands | BOOST)
+
+def _filter_unknown(terms: List[str], known_terms: List[str]) -> List[str]:
+    known = set((k or "").lower() for k in known_terms if k)
+    out: List[str] = []
+    seen: Set[str] = set()
+    for t in terms:
+        k = t.lower().strip()
+        if not k or k in seen: 
+            continue
+        if k in known: 
+            continue
+        # filtra tokens con dígitos sueltos o demasiado largos
+        if any(ch.isdigit() for ch in k) and len(k) < 3:
+            continue
+        seen.add(k)
+        out.append(t)
+    return out
+
+async def find_candidates_hybrid(text: str, known_terms: List[str], domain: str) -> List[str]:
+    # 1) regex
+    regex_terms = _regex_candidates(text)
+    # 2) LLM (si está activado)
+    llm_terms: List[str] = []
+    if settings.llm_term_extractor_enabled:
+        try:
+            llm_terms = await extract_terms_llm(text, domain=domain)
+        except Exception:
+            llm_terms = []
+    # merge + filtro por known
+    merged = regex_terms + llm_terms
+    return _filter_unknown(merged, known_terms)[: settings.term_cand_topk]
+
+async def enrich_terms(terms: List[str], domain: str, client_id: str) -> int:
+    # alimentación de RAG mediante búsqueda web
+    rag = RAGStore()
+    return await rag.web_backfill_if_empty(terms, domain, client_id)
+
+
+Nota: si quieres mantener también find_candidates “sólo regex”, deja ambas funciones y llama a find_candidates_hybrid desde el pipeline (paso siguiente).
+
+4) Usa el híbrido en el grafo
+
+En app/pipelines/translate_graph.py cambia las importaciones y el nodo de contexto:
+
+Reemplaza esta importación:
+
+from ..agents.term_mapper import find_candidates, enrich_terms
+
+
+por
+
+from ..agents.term_mapper import find_candidates_hybrid, enrich_terms
+
+
+Sustituye dentro de n_build_context la línea que calculaba unknown:
+
+unknown = find_candidates(state["masked_text"], known_terms=known)
+
+
+por
+
+unknown = await find_candidates_hybrid(state["masked_text"], known_terms=known, domain=state["domain_r"])
+
+
+Listo: ahora el sistema pide al LLM extraer palabras clave/jerga contextual, las une con las de regex, descarta las que ya están en tu glosario/TM, y luego busca en DuckDuckGo (ddgs) para enriquecer el RAG solo con lo desconocido.
+
+Por qué mejora
+
+Recall: el LLM detecta compuestos y expresiones idiomáticas que el regex no ve (p. ej., “distribution waterfall”, “late-stage venture”, “capital call backlog”).
+
+Precisión: desechamos genéricos y duplicados y no gastamos búsquedas en lo ya conocido.
+
+Coste/latencia controlables: puedes limitar MT_TERM_CAND_TOPK, desactivar el extractor (MT_LLM_TERM_EXTRACTOR=false) o cachear por hash de texto si quieres.
+
+Sugerencias extra (opcionales)
+
+Cache de términos por hash de text[:1500]+domain en SQLite para evitar pedir al LLM dos veces el mismo extractor.
+
+Whitelist de fuentes para RAG (eur-lex, oecd, esma, invest-europe, ilpa, inrev, epra, rics) al filtrar URLs devueltas por ddgs.
+
+Si subes MT_LLM_DOMAIN_WEIGHT a 0.8–1.0, verás domain_score subir cuando el LLM reconozca bien el registro de dominio.
+
+¿Quieres que te deje también el mini-cache (10 líneas) para el extractor y el filtro de dominios “confiables”

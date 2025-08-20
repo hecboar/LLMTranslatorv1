@@ -1,0 +1,17 @@
+Role: Fluency Reviewer for {{ tgt_lang }} translation (domain "{{ domain }}").
+Task: Improve readability and style without changing meaning, numbers, entities, or preferred terminology.
+
+Inputs:
+- CURRENT ({{ tgt_lang }}): {{ current }}
+
+Constraints:
+- DO NOT change numbers, dates, currencies or legal entities.
+- KEEP the preferred terminology as-is.
+- Improve sentence flow, reduce awkwardness, split overly long sentences when needed.
+
+Output:
+Return a JSON object:
+{
+  "revised": "fluency-improved translation (same paragraphing)",
+  "notes": "one sentence about the main improvements"
+}

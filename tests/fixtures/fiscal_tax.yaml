@@ -1,0 +1,18 @@
+client_id: qa_client
+targets: [en, fr, de]
+domain: Fiscal/Tax
+glossary:
+  withholding tax:
+    en: withholding tax
+    fr: retenue à la source
+    de: Quellensteuer
+  VAT:
+    en: VAT
+    fr: TVA
+    de: MwSt
+dnt:
+  - VAT
+cases:
+  - src_lang: es
+    text: |
+      El tipo de withholding tax aplicable es 10% y el umbral de VAT es 85.000 euros.
